@@ -1,6 +1,6 @@
 {
   "name": "business-gpt-sync",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Business GPT Desktop Sync App",
   "main": "dist/main/main/index.js",
   "scripts": {
@@ -63,9 +63,18 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        "dmg",
-        "zip"
-      ]
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "win": {
       "target": [
