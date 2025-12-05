@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.1)'
+        required: true
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: desktop-sync-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop-sync-app
+        run: npm ci
+
+      - name: Build app
+        working-directory: desktop-sync-app
+        run: npm run build
+
+      - name: Package & Publish (macOS)
+        if: matrix.os == 'macos-latest'
+        working-directory: desktop-sync-app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run package -- --publish always
+
+      - name: Package & Publish (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: desktop-sync-app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run package -- --publish always
+
+      - name: Package & Publish (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: desktop-sync-app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run package -- --publish always
