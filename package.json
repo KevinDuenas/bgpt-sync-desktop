@@ -18,7 +18,10 @@
     "sync",
     "business-gpt"
   ],
-  "author": "Business GPT",
+  "author": {
+    "name": "Business GPT",
+    "email": "support@businessgpt.com"
+  },
   "license": "MIT",
   "devDependencies": {
     "@electron-forge/cli": "^7.10.2",
@@ -74,7 +77,8 @@
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "category": "Utility"
     },
     "publish": {
       "provider": "github",
