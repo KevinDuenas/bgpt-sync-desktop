@@ -10,27 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
-          draft: true
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build:
-    needs: create-release
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -46,6 +26,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Get version from package.json
+        id: version
+        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        shell: bash
 
       - name: Install dependencies
         run: npm ci
@@ -71,10 +56,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run package -- --publish never
 
-      - name: Upload artifacts to release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ github.run_number }}
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: Release v${{ steps.version.outputs.VERSION }}
+          draft: false
           files: |
             release/*.exe
             release/*.dmg
@@ -85,25 +72,3 @@ jobs:
             release/latest*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  publish-release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Publish release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: releases } = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            const draft = releases.find(r => r.draft && r.tag_name === `v${{ github.run_number }}`);
-            if (draft) {
-              await github.rest.repos.updateRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: draft.id,
-                draft: false,
-              });
-            }
