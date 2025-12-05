@@ -1,7 +1,7 @@
 {
-  "name": "business-gpt-sync",
-  "version": "1.0.1",
-  "description": "Business GPT Desktop Sync App",
+  "name": "lina-sync",
+  "version": "1.0.2",
+  "description": "Lina Desktop Sync App",
   "main": "dist/main/main/index.js",
   "scripts": {
     "dev": "node start.js",
@@ -16,11 +16,11 @@
   "keywords": [
     "electron",
     "sync",
-    "business-gpt"
+    "lina"
   ],
   "author": {
-    "name": "Business GPT",
-    "email": "support@businessgpt.com"
+    "name": "Lina",
+    "email": "support@lina.app"
   },
   "license": "MIT",
   "devDependencies": {
@@ -51,8 +51,8 @@
     "react-dom": "^18.2.0"
   },
   "build": {
-    "appId": "com.businessgpt.sync",
-    "productName": "Business GPT Sync",
+    "appId": "com.lina.sync",
+    "productName": "Lina Sync",
     "directories": {
       "output": "release"
     },

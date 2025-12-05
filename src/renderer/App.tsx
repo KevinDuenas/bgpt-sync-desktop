@@ -88,7 +88,7 @@ export default function App() {
           fontSize: '20px',
           fontWeight: 'bold',
         }}>
-          Business GPT Sync
+          Lina Sync
         </div>
 
         {/* Navigation */}
