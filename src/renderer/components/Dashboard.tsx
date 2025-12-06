@@ -53,7 +53,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ padding: '40px', maxWidth: '1200px' }}>
-      <h1 style={{ fontSize: '32px', fontWeight: 'bold', marginBottom: '30px' }}>Inicio</h1>
+      <h1 style={{ fontSize: '32px', fontWeight: 'bold', marginBottom: '30px' }}>Lina Sync App</h1>
 
       {/* Sync Status Card */}
       <div style={{
