@@ -181,6 +181,10 @@ export default function App() {
             <div style={{ textAlign: 'center', color: '#10b981' }}>
               Nueva version disponible: v{updateStatus.version}
             </div>
+          ) : updateStatus?.status === 'error' ? (
+            <div style={{ textAlign: 'center', color: '#ef4444', fontSize: '11px' }}>
+              Error: {updateStatus.error}
+            </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>v{appVersion}</span>
