@@ -36,7 +36,8 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+    // In production, __dirname is dist/main/main/, so we need to go up 2 levels
+    mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'))
   }
 
   mainWindow.on('closed', () => {
