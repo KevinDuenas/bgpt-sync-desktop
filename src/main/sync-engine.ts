@@ -9,6 +9,7 @@ import { FileScanner } from './scanner'
 import { ApiClient } from './api-client'
 import { SyncStatus, FileRecord, AppConfig } from '../shared/types'
 import { BrowserWindow } from 'electron'
+import { needsConversion, convertFile } from './file-converter'
 
 export class SyncEngine {
   private db: DatabaseManager
@@ -134,7 +135,9 @@ export class SyncEngine {
       // Phase 2: Check which files need to be uploaded
       console.log('Phase 2: Checking for changes...')
       const allHashes = Array.from(scannedFiles.values()).map(f => f.fileHash)
+      console.log(`Checking ${allHashes.length} hashes with backend...`)
       const hashCheckResults = await this.apiClient!.checkHashes(integrationId, allHashes)
+      console.log(`Backend returned ${hashCheckResults.size} hash results`)
 
       const filesToUpload: any[] = []
       const filesUnchanged: any[] = []
@@ -144,11 +147,11 @@ export class SyncEngine {
         const hashResult = hashCheckResults.get(fileData.fileHash)
 
         if (!hashResult?.exists) {
-          // New file
+          // New file - hash not found on server
           filesToUpload.push(fileData)
           this.syncStatus.filesNew++
         } else if (existingFile && existingFile.fileHash !== fileData.fileHash) {
-          // Modified file
+          // Modified file - local hash changed
           filesToUpload.push(fileData)
           this.syncStatus.filesUpdated++
         } else {
@@ -170,6 +173,8 @@ export class SyncEngine {
         }
       }
 
+      console.log(`Phase 2 results: ${this.syncStatus.filesNew} new, ${this.syncStatus.filesUpdated} updated, ${this.syncStatus.filesSkipped} skipped, ${filesToUpload.length} to upload`)
+
       this.syncStatus.progress = 30
       this.sendStatusUpdate()
 
@@ -182,14 +187,35 @@ export class SyncEngine {
 
         for (let i = 0; i < filesToUpload.length; i += batchSize) {
           const batch = filesToUpload.slice(i, i + batchSize)
-          const uploadData = batch.map(f => ({
-            filePath: f.filePath,
-            fileHash: f.fileHash,
-            fileName: path.basename(f.filePath),
-            fileSize: f.fileSize,
-            folderConfigId: f.folderConfigId,
-            groupIds: f.groupIds,
-            localPath: f.filePath,
+
+          // Prepare upload data, converting files if needed (e.g., XML -> JSON)
+          const uploadData = await Promise.all(batch.map(async f => {
+            const baseData = {
+              filePath: f.filePath,
+              fileHash: f.fileHash,
+              fileName: path.basename(f.filePath),
+              fileSize: f.fileSize,
+              folderConfigId: f.folderConfigId,
+              groupIds: f.groupIds,
+              localPath: f.filePath,
+            }
+
+            // Check if file needs conversion (e.g., XML -> JSON)
+            if (needsConversion(f.filePath)) {
+              const converted = await convertFile(f.filePath)
+              if (converted) {
+                console.log(`Converting ${converted.originalFileName} -> ${converted.convertedFileName}`)
+                return {
+                  ...baseData,
+                  fileName: converted.convertedFileName,
+                  convertedContent: converted.content,
+                  originalFileName: converted.originalFileName,
+                  convertedFrom: converted.convertedFrom,
+                }
+              }
+            }
+
+            return baseData
           }))
 
           try {

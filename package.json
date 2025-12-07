@@ -1,6 +1,6 @@
 {
   "name": "lina-sync",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Lina Desktop Sync App",
   "main": "dist/main/main/index.js",
   "scripts": {
@@ -34,6 +34,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
+    "@types/xml2js": "^0.4.14",
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
     "electron": "^28.0.0",
@@ -48,7 +49,8 @@
     "lucide-react": "^0.294.0",
     "node-cron": "^3.0.3",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "xml2js": "^0.6.2"
   },
   "build": {
     "appId": "com.lina.sync",
@@ -65,11 +67,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "identity": "-",

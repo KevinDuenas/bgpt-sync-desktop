@@ -4,6 +4,7 @@
 import axios, { AxiosInstance } from 'axios'
 import FormData from 'form-data'
 import fs from 'fs'
+import { Readable } from 'stream'
 import { SyncRun, Group } from '../shared/types'
 
 // Fixed backend URL - not configurable
@@ -62,6 +63,7 @@ export class ApiClient {
 
   /**
    * Upload files in batch
+   * Supports both regular files and converted files (e.g., XML converted to JSON)
    */
   async uploadBatch(
     integrationId: string,
@@ -73,6 +75,10 @@ export class ApiClient {
       folderConfigId: number
       groupIds: string[]
       localPath: string
+      // For converted files (e.g., XML -> JSON)
+      convertedContent?: Buffer
+      originalFileName?: string
+      convertedFrom?: string
     }>,
     machineId: string,
     os: string
@@ -84,22 +90,35 @@ export class ApiClient {
       files: files.map(f => ({
         file_hash: f.fileHash,
         file_name: f.fileName,
-        file_size: f.fileSize,
+        file_size: f.convertedContent ? f.convertedContent.length : f.fileSize,
         local_path: f.localPath,
         folder_config_id: f.folderConfigId,
         group_ids: f.groupIds,
-        extra_metadata: {},
+        extra_metadata: {
+          // Include original file info if this was converted
+          ...(f.originalFileName && { original_filename: f.originalFileName }),
+          ...(f.convertedFrom && { converted_from: f.convertedFrom }),
+        },
       })),
       machine_id: machineId,
       os: os,
     }
     formData.append('metadata', JSON.stringify(metadata))
 
-    // Add file data
+    // Add file data - use converted content if available, otherwise read from disk
     for (const file of files) {
-      formData.append('files', fs.createReadStream(file.filePath), {
-        filename: file.fileName,
-      })
+      if (file.convertedContent) {
+        // Use Buffer stream for converted files
+        const stream = Readable.from(file.convertedContent)
+        formData.append('files', stream, {
+          filename: file.fileName,
+          contentType: 'application/json',
+        })
+      } else {
+        formData.append('files', fs.createReadStream(file.filePath), {
+          filename: file.fileName,
+        })
+      }
     }
 
     const response = await this.client.post(
