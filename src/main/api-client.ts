@@ -211,6 +211,7 @@ export class ApiClient {
       filesSkipped: number
       bytesProcessed: number
       errorMessage?: string
+      errorDetails?: Array<{ fileName: string; filePath: string; error: string }>
     }
   ): Promise<SyncRun> {
     const response = await this.client.post(
@@ -225,6 +226,13 @@ export class ApiClient {
         files_failed: stats.filesFailed,
         files_skipped: stats.filesSkipped,
         bytes_processed: stats.bytesProcessed,
+        error_details: stats.errorDetails && stats.errorDetails.length > 0 ? {
+          failed_files: stats.errorDetails.map(e => ({
+            file_name: e.fileName,
+            file_path: e.filePath,
+            error: e.error,
+          })),
+        } : undefined,
       }
     )
     return response.data

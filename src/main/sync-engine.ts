@@ -95,6 +95,8 @@ export class SyncEngine {
       bytesProcessed: 0,
       progress: 0,
     }
+    // Collect error details for failed files
+    const failedFilesDetails: Array<{ fileName: string; filePath: string; error: string }> = []
     this.sendStatusUpdate()
 
     try {
@@ -148,12 +150,10 @@ export class SyncEngine {
 
         if (!hashResult?.exists) {
           // New file - hash not found on server
-          filesToUpload.push(fileData)
-          this.syncStatus.filesNew++
+          filesToUpload.push({ ...fileData, uploadType: 'new' })
         } else if (existingFile && existingFile.fileHash !== fileData.fileHash) {
           // Modified file - local hash changed
-          filesToUpload.push(fileData)
-          this.syncStatus.filesUpdated++
+          filesToUpload.push({ ...fileData, uploadType: 'updated' })
         } else {
           // Unchanged file - already exists on server with same hash
           filesUnchanged.push(fileData)
@@ -173,7 +173,7 @@ export class SyncEngine {
         }
       }
 
-      console.log(`Phase 2 results: ${this.syncStatus.filesNew} new, ${this.syncStatus.filesUpdated} updated, ${this.syncStatus.filesSkipped} skipped, ${filesToUpload.length} to upload`)
+      console.log(`Phase 2 results: ${filesToUpload.filter(f => f.uploadType === 'new').length} new, ${filesToUpload.filter(f => f.uploadType === 'updated').length} updated, ${this.syncStatus.filesSkipped} skipped, ${filesToUpload.length} to upload`)
 
       this.syncStatus.progress = 30
       this.sendStatusUpdate()
@@ -244,7 +244,14 @@ export class SyncEngine {
                   errorMessage: null,
                 })
                 this.syncStatus.bytesProcessed += fileData.fileSize
+                // Count successful uploads by type
+                if (fileData.uploadType === 'new') {
+                  this.syncStatus.filesNew++
+                } else if (fileData.uploadType === 'updated') {
+                  this.syncStatus.filesUpdated++
+                }
               } else {
+                const errorMsg = result.errorMessage || 'Upload failed'
                 this.db.upsertFile({
                   filePath: fileData.filePath,
                   fileHash: fileData.fileHash,
@@ -254,13 +261,20 @@ export class SyncEngine {
                   folderConfigId: fileData.folderConfigId,
                   lastSyncedAt: null,
                   status: 'failed',
-                  errorMessage: result.errorMessage || 'Upload failed',
+                  errorMessage: errorMsg,
                 })
                 this.syncStatus.filesFailed++
+                // Collect error details for backend
+                failedFilesDetails.push({
+                  fileName: path.basename(fileData.filePath),
+                  filePath: fileData.filePath,
+                  error: errorMsg,
+                })
               }
             }
           } catch (error) {
             console.error('Batch upload error:', error)
+            const errorMsg = String(error)
             // Mark all files in batch as failed
             for (const fileData of batch) {
               this.db.upsertFile({
@@ -272,9 +286,15 @@ export class SyncEngine {
                 folderConfigId: fileData.folderConfigId,
                 lastSyncedAt: null,
                 status: 'failed',
-                errorMessage: String(error),
+                errorMessage: errorMsg,
               })
               this.syncStatus.filesFailed++
+              // Collect error details for backend
+              failedFilesDetails.push({
+                fileName: path.basename(fileData.filePath),
+                filePath: fileData.filePath,
+                error: errorMsg,
+              })
             }
           }
 
@@ -324,6 +344,7 @@ export class SyncEngine {
         filesFailed: this.syncStatus.filesFailed,
         filesSkipped: this.syncStatus.filesSkipped,
         bytesProcessed: this.syncStatus.bytesProcessed,
+        errorDetails: failedFilesDetails.length > 0 ? failedFilesDetails : undefined,
       })
 
       this.syncStatus.lastSyncAt = Date.now()
@@ -348,6 +369,7 @@ export class SyncEngine {
               filesSkipped: this.syncStatus.filesSkipped,
               bytesProcessed: this.syncStatus.bytesProcessed,
               errorMessage: String(error),
+              errorDetails: failedFilesDetails.length > 0 ? failedFilesDetails : undefined,
             })
           }
         } catch (completeError) {
