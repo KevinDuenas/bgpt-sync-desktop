@@ -33,7 +33,7 @@ export class ApiClient {
     displayName: string
     created: boolean
   }> {
-    const response = await this.client.get('/integrations/custom/me')
+    const response = await this.client.get('/integrations/local/me')
     return {
       integrationId: response.data.integration_id,
       companyId: response.data.company_id,
@@ -47,7 +47,7 @@ export class ApiClient {
    * Check which file hashes already exist in the backend
    */
   async checkHashes(integrationId: string, fileHashes: string[]): Promise<Map<string, { exists: boolean; documentId?: string }>> {
-    const response = await this.client.post(`/integrations/custom/${integrationId}/check-hash`, {
+    const response = await this.client.post(`/integrations/local/${integrationId}/check-hash`, {
       file_hashes: fileHashes,
     })
 
@@ -122,7 +122,7 @@ export class ApiClient {
     }
 
     const response = await this.client.post(
-      `/integrations/custom/${integrationId}/upload-batch`,
+      `/integrations/local/${integrationId}/upload-batch`,
       formData,
       {
         headers: formData.getHeaders(),
@@ -143,7 +143,7 @@ export class ApiClient {
    * Delete documents by hash
    */
   async deleteBatch(integrationId: string, fileHashes: string[]): Promise<{ deletedCount: number; errors: string[] }> {
-    const response = await this.client.delete(`/integrations/custom/${integrationId}/documents`, {
+    const response = await this.client.delete(`/integrations/local/${integrationId}/documents`, {
       data: {
         file_hashes: fileHashes,
       },
@@ -158,7 +158,7 @@ export class ApiClient {
    * Create a new sync run
    */
   async createSyncRun(integrationId: string, triggeredBy: string = 'desktop_app'): Promise<SyncRun> {
-    const response = await this.client.post(`/integrations/custom/${integrationId}/sync-runs`, {
+    const response = await this.client.post(`/integrations/local/${integrationId}/sync-runs`, {
       triggered_by: triggeredBy,
     })
     return response.data
@@ -181,7 +181,7 @@ export class ApiClient {
     }
   ): Promise<SyncRun> {
     const response = await this.client.patch(
-      `/integrations/custom/${integrationId}/sync-runs/${syncRunId}`,
+      `/integrations/local/${integrationId}/sync-runs/${syncRunId}`,
       {
         files_scanned: progress.filesScanned,
         files_new: progress.filesNew,
@@ -215,7 +215,7 @@ export class ApiClient {
     }
   ): Promise<SyncRun> {
     const response = await this.client.post(
-      `/integrations/custom/${integrationId}/sync-runs/${syncRunId}/complete`,
+      `/integrations/local/${integrationId}/sync-runs/${syncRunId}/complete`,
       {
         status,
         error_message: stats.errorMessage,
@@ -242,7 +242,7 @@ export class ApiClient {
    * Get available groups for permission assignment
    */
   async getGroups(integrationId: string): Promise<Group[]> {
-    const response = await this.client.get(`/integrations/custom/${integrationId}/groups`)
+    const response = await this.client.get(`/integrations/local/${integrationId}/groups`)
     return response.data.groups
   }
 
@@ -250,7 +250,7 @@ export class ApiClient {
    * Get sync runs history
    */
   async getSyncRuns(integrationId: string, limit: number = 50): Promise<{ syncRuns: SyncRun[]; total: number }> {
-    const response = await this.client.get(`/integrations/custom/${integrationId}/sync-runs`, {
+    const response = await this.client.get(`/integrations/local/${integrationId}/sync-runs`, {
       params: { limit },
     })
     // Map snake_case from API to camelCase for frontend
