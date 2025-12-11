@@ -191,8 +191,11 @@ function StatItem({ label, value, color = '#111827' }: StatItemProps) {
 }
 
 function formatDate(dateString: string): string {
-  const date = new Date(dateString)
-  return date.toLocaleString('es-ES', {
+  // Backend sends UTC times without 'Z' suffix, so we need to treat them as UTC
+  // by appending 'Z' if not already present
+  const utcDateString = dateString.endsWith('Z') ? dateString : dateString + 'Z'
+  const date = new Date(utcDateString)
+  return date.toLocaleString('es-MX', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -202,7 +205,10 @@ function formatDate(dateString: string): string {
 }
 
 function formatDuration(start: string, end: string): string {
-  const duration = new Date(end).getTime() - new Date(start).getTime()
+  // Ensure both dates are treated as UTC
+  const startUtc = start.endsWith('Z') ? start : start + 'Z'
+  const endUtc = end.endsWith('Z') ? end : end + 'Z'
+  const duration = new Date(endUtc).getTime() - new Date(startUtc).getTime()
   const seconds = Math.floor(duration / 1000)
   const minutes = Math.floor(seconds / 60)
   const hours = Math.floor(minutes / 60)
