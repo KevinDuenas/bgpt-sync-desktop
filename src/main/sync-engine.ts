@@ -148,17 +148,33 @@ export class SyncEngine {
         const existingFile = this.db.getFileByPath(filePath)
         const hashResult = hashCheckResults.get(fileData.fileHash)
 
+        // Check if file was modified locally (comparing DB hash vs current file hash)
+        const wasModified = existingFile && existingFile.fileHash !== fileData.fileHash
+
         if (!hashResult?.exists) {
-          // New file - hash not found on server
-          filesToUpload.push({ ...fileData, uploadType: 'new' })
-        } else if (existingFile && existingFile.fileHash !== fileData.fileHash) {
-          // Modified file - local hash changed
-          filesToUpload.push({ ...fileData, uploadType: 'updated' })
+          // Hash not found on server - upload it
+          const uploadType = existingFile ? 'updated' : 'new'
+          filesToUpload.push({ ...fileData, uploadType })
+        } else if (wasModified) {
+          // Hash exists on server but local file was modified
+          // The new content matches existing content on server
+          // Just update local DB to point to existing document
+          this.syncStatus.filesUpdated++
+          this.db.upsertFile({
+            filePath: fileData.filePath,
+            fileHash: fileData.fileHash,
+            fileSize: fileData.fileSize,
+            lastModified: fileData.lastModified,
+            documentId: hashResult?.documentId || null,
+            folderConfigId: fileData.folderConfigId,
+            lastSyncedAt: Date.now(),
+            status: 'synced',
+            errorMessage: null,
+          })
         } else {
           // Unchanged file - already exists on server with same hash
           filesUnchanged.push(fileData)
           this.syncStatus.filesSkipped++
-          // Update database record
           this.db.upsertFile({
             filePath: fileData.filePath,
             fileHash: fileData.fileHash,
@@ -173,7 +189,7 @@ export class SyncEngine {
         }
       }
 
-      console.log(`Phase 2 results: ${filesToUpload.filter(f => f.uploadType === 'new').length} new, ${filesToUpload.filter(f => f.uploadType === 'updated').length} updated, ${this.syncStatus.filesSkipped} skipped, ${filesToUpload.length} to upload`)
+      console.log(`Sync check: ${filesToUpload.filter(f => f.uploadType === 'new').length} new, ${filesToUpload.filter(f => f.uploadType === 'updated').length} updated, ${this.syncStatus.filesSkipped} unchanged`)
 
       this.syncStatus.progress = 30
       this.sendStatusUpdate()
