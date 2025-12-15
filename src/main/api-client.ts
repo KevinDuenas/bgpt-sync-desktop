@@ -275,4 +275,209 @@ export class ApiClient {
       total: response.data.total,
     }
   }
+
+  // ==========================================================================
+  // S3 Upload Methods (New async upload flow)
+  // ==========================================================================
+
+  /**
+   * Request presigned URLs for S3 upload
+   */
+  async requestBatchUpload(
+    integrationId: string,
+    files: Array<{
+      fileHash: string
+      fileName: string
+      fileSize: number
+      folderConfigId?: number
+      groupIds: string[]
+      localPath?: string
+    }>,
+    machineId: string,
+    os: string
+  ): Promise<S3BatchUploadResponse> {
+    const response = await this.client.post(
+      `/integrations/local/${integrationId}/request-batch-upload`,
+      {
+        files: files.map(f => ({
+          file_hash: f.fileHash,
+          file_name: f.fileName,
+          file_size: f.fileSize,
+          folder_config_id: f.folderConfigId,
+          group_ids: f.groupIds,
+          local_path: f.localPath,
+        })),
+        machine_id: machineId,
+        os: os,
+      }
+    )
+
+    return {
+      syncRunId: response.data.sync_run_id,
+      uploads: response.data.uploads.map((u: any) => ({
+        fileHash: u.file_hash,
+        uploadUrl: u.upload_url,
+        s3Key: u.s3_key,
+      })),
+      skipped: response.data.skipped.map((s: any) => ({
+        fileHash: s.file_hash,
+        reason: s.reason,
+        documentId: s.document_id,
+      })),
+      totalSizeBytes: response.data.total_size_bytes,
+      requiresConfirmation: response.data.requires_confirmation,
+    }
+  }
+
+  /**
+   * Confirm which files were uploaded to S3
+   */
+  async confirmUploads(
+    integrationId: string,
+    data: {
+      syncRunId: string
+      uploadedFiles: string[]
+      failedFiles?: Array<{ fileHash: string; error: string }>
+    }
+  ): Promise<{ status: string; messagesQueued: number; filesProcessing: number }> {
+    const response = await this.client.post(
+      `/integrations/local/${integrationId}/confirm-uploads`,
+      {
+        sync_run_id: data.syncRunId,
+        uploaded_files: data.uploadedFiles,
+        failed_files: data.failedFiles?.map(f => ({
+          file_hash: f.fileHash,
+          error: f.error,
+        })),
+      }
+    )
+
+    return {
+      status: response.data.status,
+      messagesQueued: response.data.messages_queued,
+      filesProcessing: response.data.files_processing,
+    }
+  }
+
+  /**
+   * Get S3 sync status for polling
+   */
+  async getSyncStatus(integrationId: string, syncRunId: string): Promise<S3SyncStatus> {
+    const response = await this.client.get(
+      `/integrations/local/${integrationId}/sync-runs/${syncRunId}/status`
+    )
+
+    return {
+      syncRunId: response.data.sync_run_id,
+      status: response.data.status,
+      uploadMethod: response.data.upload_method,
+      filesPendingUpload: response.data.files_pending_upload,
+      filesUploadedToS3: response.data.files_uploaded_to_s3,
+      filesProcessing: response.data.files_processing,
+      filesCompleted: response.data.files_completed,
+      filesFailed: response.data.files_failed,
+      filesSkipped: response.data.files_skipped,
+      progressPercent: response.data.progress_percent,
+      errors: response.data.errors,
+      isComplete: response.data.is_complete,
+      isResumable: response.data.is_resumable,
+    }
+  }
+
+  /**
+   * Resume an interrupted sync
+   */
+  async resumeSync(integrationId: string, syncRunId: string): Promise<ResumeSyncResponse> {
+    const response = await this.client.post(
+      `/integrations/local/${integrationId}/sync-runs/${syncRunId}/resume`
+    )
+
+    return {
+      syncRunId: response.data.sync_run_id,
+      uploads: response.data.uploads.map((u: any) => ({
+        fileHash: u.file_hash,
+        uploadUrl: u.upload_url,
+        s3Key: u.s3_key,
+      })),
+      filesAlreadyUploaded: response.data.files_already_uploaded,
+      filesCompleted: response.data.files_completed,
+      canResume: response.data.can_resume,
+    }
+  }
+
+  /**
+   * Get incomplete/resumable syncs
+   */
+  async getIncompleteSyncs(integrationId: string): Promise<IncompleteSyncInfo[]> {
+    const response = await this.client.get(
+      `/integrations/local/${integrationId}/incomplete-syncs`
+    )
+
+    return response.data.incomplete_syncs.map((s: any) => ({
+      id: s.id,
+      status: s.status,
+      uploadMethod: s.upload_method,
+      filesPendingUpload: s.files_pending_upload,
+      filesUploadedToS3: s.files_uploaded_to_s3,
+      filesCompleted: s.files_completed,
+      createdAt: s.created_at,
+      lastActivityAt: s.last_activity_at,
+    }))
+  }
+}
+
+// Types for S3 upload flow
+export interface S3BatchUploadResponse {
+  syncRunId: string
+  uploads: Array<{
+    fileHash: string
+    uploadUrl: string
+    s3Key: string
+  }>
+  skipped: Array<{
+    fileHash: string
+    reason: string
+    documentId?: string
+  }>
+  totalSizeBytes: number
+  requiresConfirmation: boolean
+}
+
+export interface S3SyncStatus {
+  syncRunId: string
+  status: string
+  uploadMethod: string
+  filesPendingUpload: number
+  filesUploadedToS3: number
+  filesProcessing: number
+  filesCompleted: number
+  filesFailed: number
+  filesSkipped: number
+  progressPercent: number
+  errors: Array<{ fileName: string; error: string }>
+  isComplete: boolean
+  isResumable: boolean
+}
+
+export interface ResumeSyncResponse {
+  syncRunId: string
+  uploads: Array<{
+    fileHash: string
+    uploadUrl: string
+    s3Key: string
+  }>
+  filesAlreadyUploaded: number
+  filesCompleted: number
+  canResume: boolean
+}
+
+export interface IncompleteSyncInfo {
+  id: string
+  status: string
+  uploadMethod: string
+  filesPendingUpload: number
+  filesUploadedToS3: number
+  filesCompleted: number
+  createdAt: string
+  lastActivityAt: string
 }

@@ -7,14 +7,20 @@ import os from 'os'
 import { DatabaseManager } from './database'
 import { FileScanner } from './scanner'
 import { ApiClient } from './api-client'
-import { SyncStatus, FileRecord, AppConfig } from '../shared/types'
+import { S3UploadService } from './s3-upload-service'
+import { SyncStatus } from '../shared/types'
 import { BrowserWindow } from 'electron'
 import { needsConversion, convertFile } from './file-converter'
+
+// Threshold for using S3 upload (files count or total size)
+const S3_UPLOAD_FILE_THRESHOLD = 50  // Use S3 for more than 50 files
+const S3_UPLOAD_SIZE_THRESHOLD = 50 * 1024 * 1024  // Use S3 for more than 50MB total
 
 export class SyncEngine {
   private db: DatabaseManager
   private scanner: FileScanner
   private apiClient: ApiClient | null = null
+  private s3UploadService: S3UploadService | null = null
   private isRunning = false
   private currentSyncRunId: string | null = null
   private syncStatus: SyncStatus = {
@@ -52,7 +58,24 @@ export class SyncEngine {
     }
 
     this.apiClient = new ApiClient(apiToken)
+    this.s3UploadService = new S3UploadService(this.apiClient)
     return true
+  }
+
+  /**
+   * Determine if we should use S3 upload based on file count and size
+   */
+  private shouldUseS3Upload(files: any[]): boolean {
+    if (files.length > S3_UPLOAD_FILE_THRESHOLD) {
+      return true
+    }
+
+    const totalSize = files.reduce((sum, f) => sum + (f.fileSize || 0), 0)
+    if (totalSize > S3_UPLOAD_SIZE_THRESHOLD) {
+      return true
+    }
+
+    return false
   }
 
   /**
@@ -194,128 +217,34 @@ export class SyncEngine {
       this.syncStatus.progress = 30
       this.sendStatusUpdate()
 
-      // Phase 3: Upload new/modified files in batches
+      // Phase 3: Upload new/modified files
       if (filesToUpload.length > 0) {
-        console.log(`Phase 3: Uploading ${filesToUpload.length} files...`)
-        const batchSize = 10
         const machineId = this.db.getConfig('machineId') || os.hostname()
         const osType = os.platform()
 
-        for (let i = 0; i < filesToUpload.length; i += batchSize) {
-          const batch = filesToUpload.slice(i, i + batchSize)
+        // Decide upload method based on file count and size
+        const useS3 = this.shouldUseS3Upload(filesToUpload)
 
-          // Prepare upload data, converting files if needed (e.g., XML -> JSON)
-          const uploadData = await Promise.all(batch.map(async f => {
-            const baseData = {
-              filePath: f.filePath,
-              fileHash: f.fileHash,
-              fileName: path.basename(f.filePath),
-              fileSize: f.fileSize,
-              folderConfigId: f.folderConfigId,
-              groupIds: f.groupIds,
-              localPath: f.filePath,
-            }
-
-            // Check if file needs conversion (e.g., XML -> JSON)
-            if (needsConversion(f.filePath)) {
-              const converted = await convertFile(f.filePath)
-              if (converted) {
-                console.log(`Converting ${converted.originalFileName} -> ${converted.convertedFileName}`)
-                return {
-                  ...baseData,
-                  fileName: converted.convertedFileName,
-                  convertedContent: converted.content,
-                  originalFileName: converted.originalFileName,
-                  convertedFrom: converted.convertedFrom,
-                }
-              }
-            }
-
-            return baseData
-          }))
-
-          try {
-            const results = await this.apiClient!.uploadBatch(
-              integrationId,
-              uploadData,
-              machineId,
-              osType
-            )
-
-            // Update database with results
-            for (let j = 0; j < results.length; j++) {
-              const result = results[j]
-              const fileData = batch[j]
-
-              if (result.status === 'success') {
-                this.db.upsertFile({
-                  filePath: fileData.filePath,
-                  fileHash: fileData.fileHash,
-                  fileSize: fileData.fileSize,
-                  lastModified: fileData.lastModified,
-                  documentId: result.documentId || null,
-                  folderConfigId: fileData.folderConfigId,
-                  lastSyncedAt: Date.now(),
-                  status: 'synced',
-                  errorMessage: null,
-                })
-                this.syncStatus.bytesProcessed += fileData.fileSize
-                // Count successful uploads by type
-                if (fileData.uploadType === 'new') {
-                  this.syncStatus.filesNew++
-                } else if (fileData.uploadType === 'updated') {
-                  this.syncStatus.filesUpdated++
-                }
-              } else {
-                const errorMsg = result.errorMessage || 'Upload failed'
-                this.db.upsertFile({
-                  filePath: fileData.filePath,
-                  fileHash: fileData.fileHash,
-                  fileSize: fileData.fileSize,
-                  lastModified: fileData.lastModified,
-                  documentId: null,
-                  folderConfigId: fileData.folderConfigId,
-                  lastSyncedAt: null,
-                  status: 'failed',
-                  errorMessage: errorMsg,
-                })
-                this.syncStatus.filesFailed++
-                // Collect error details for backend
-                failedFilesDetails.push({
-                  fileName: path.basename(fileData.filePath),
-                  filePath: fileData.filePath,
-                  error: errorMsg,
-                })
-              }
-            }
-          } catch (error) {
-            console.error('Batch upload error:', error)
-            const errorMsg = String(error)
-            // Mark all files in batch as failed
-            for (const fileData of batch) {
-              this.db.upsertFile({
-                filePath: fileData.filePath,
-                fileHash: fileData.fileHash,
-                fileSize: fileData.fileSize,
-                lastModified: fileData.lastModified,
-                documentId: null,
-                folderConfigId: fileData.folderConfigId,
-                lastSyncedAt: null,
-                status: 'failed',
-                errorMessage: errorMsg,
-              })
-              this.syncStatus.filesFailed++
-              // Collect error details for backend
-              failedFilesDetails.push({
-                fileName: path.basename(fileData.filePath),
-                filePath: fileData.filePath,
-                error: errorMsg,
-              })
-            }
-          }
-
-          this.syncStatus.progress = 30 + Math.floor((i / filesToUpload.length) * 50)
-          this.sendStatusUpdate()
+        if (useS3) {
+          // S3 Upload Flow - for large batches
+          console.log(`Phase 3: Uploading ${filesToUpload.length} files via S3...`)
+          await this.performS3Upload(
+            integrationId,
+            filesToUpload,
+            machineId,
+            osType,
+            failedFilesDetails
+          )
+        } else {
+          // Direct Upload Flow - for small batches (legacy)
+          console.log(`Phase 3: Uploading ${filesToUpload.length} files directly...`)
+          await this.performDirectUpload(
+            integrationId,
+            filesToUpload,
+            machineId,
+            osType,
+            failedFilesDetails
+          )
         }
       }
 
@@ -400,6 +329,307 @@ export class SyncEngine {
       this.syncStatus.isRunning = false
       this.syncStatus.currentSyncRunId = null
       this.sendStatusUpdate()
+    }
+  }
+
+  /**
+   * Perform direct upload (legacy flow for small batches)
+   */
+  private async performDirectUpload(
+    integrationId: string,
+    filesToUpload: any[],
+    machineId: string,
+    osType: string,
+    failedFilesDetails: Array<{ fileName: string; filePath: string; error: string }>
+  ): Promise<void> {
+    const batchSize = 10
+
+    for (let i = 0; i < filesToUpload.length; i += batchSize) {
+      const batch = filesToUpload.slice(i, i + batchSize)
+
+      // Prepare upload data, converting files if needed (e.g., XML -> JSON)
+      const uploadData = await Promise.all(batch.map(async f => {
+        const baseData = {
+          filePath: f.filePath,
+          fileHash: f.fileHash,
+          fileName: path.basename(f.filePath),
+          fileSize: f.fileSize,
+          folderConfigId: f.folderConfigId,
+          groupIds: f.groupIds,
+          localPath: f.filePath,
+        }
+
+        // Check if file needs conversion (e.g., XML -> JSON)
+        if (needsConversion(f.filePath)) {
+          const converted = await convertFile(f.filePath)
+          if (converted) {
+            console.log(`Converting ${converted.originalFileName} -> ${converted.convertedFileName}`)
+            return {
+              ...baseData,
+              fileName: converted.convertedFileName,
+              convertedContent: converted.content,
+              originalFileName: converted.originalFileName,
+              convertedFrom: converted.convertedFrom,
+            }
+          }
+        }
+
+        return baseData
+      }))
+
+      try {
+        const results = await this.apiClient!.uploadBatch(
+          integrationId,
+          uploadData,
+          machineId,
+          osType
+        )
+
+        // Update database with results
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j]
+          const fileData = batch[j]
+
+          if (result.status === 'success') {
+            this.db.upsertFile({
+              filePath: fileData.filePath,
+              fileHash: fileData.fileHash,
+              fileSize: fileData.fileSize,
+              lastModified: fileData.lastModified,
+              documentId: result.documentId || null,
+              folderConfigId: fileData.folderConfigId,
+              lastSyncedAt: Date.now(),
+              status: 'synced',
+              errorMessage: null,
+            })
+            this.syncStatus.bytesProcessed += fileData.fileSize
+            // Count successful uploads by type
+            if (fileData.uploadType === 'new') {
+              this.syncStatus.filesNew++
+            } else if (fileData.uploadType === 'updated') {
+              this.syncStatus.filesUpdated++
+            }
+          } else {
+            const errorMsg = result.errorMessage || 'Upload failed'
+            this.db.upsertFile({
+              filePath: fileData.filePath,
+              fileHash: fileData.fileHash,
+              fileSize: fileData.fileSize,
+              lastModified: fileData.lastModified,
+              documentId: null,
+              folderConfigId: fileData.folderConfigId,
+              lastSyncedAt: null,
+              status: 'failed',
+              errorMessage: errorMsg,
+            })
+            this.syncStatus.filesFailed++
+            failedFilesDetails.push({
+              fileName: path.basename(fileData.filePath),
+              filePath: fileData.filePath,
+              error: errorMsg,
+            })
+          }
+        }
+      } catch (error) {
+        console.error('Batch upload error:', error)
+        const errorMsg = String(error)
+        for (const fileData of batch) {
+          this.db.upsertFile({
+            filePath: fileData.filePath,
+            fileHash: fileData.fileHash,
+            fileSize: fileData.fileSize,
+            lastModified: fileData.lastModified,
+            documentId: null,
+            folderConfigId: fileData.folderConfigId,
+            lastSyncedAt: null,
+            status: 'failed',
+            errorMessage: errorMsg,
+          })
+          this.syncStatus.filesFailed++
+          failedFilesDetails.push({
+            fileName: path.basename(fileData.filePath),
+            filePath: fileData.filePath,
+            error: errorMsg,
+          })
+        }
+      }
+
+      this.syncStatus.progress = 30 + Math.floor((i / filesToUpload.length) * 50)
+      this.sendStatusUpdate()
+    }
+  }
+
+  /**
+   * Perform S3 upload (new async flow for large batches)
+   */
+  private async performS3Upload(
+    integrationId: string,
+    filesToUpload: any[],
+    machineId: string,
+    osType: string,
+    failedFilesDetails: Array<{ fileName: string; filePath: string; error: string }>
+  ): Promise<void> {
+    // Prepare files for S3 upload
+    const s3Files = filesToUpload.map(f => ({
+      filePath: f.filePath,
+      fileHash: f.fileHash,
+      fileName: path.basename(f.filePath),
+      fileSize: f.fileSize,
+      folderConfigId: f.folderConfigId,
+      groupIds: f.groupIds || [],
+      lastModified: f.lastModified,
+    }))
+
+    try {
+      // Upload to S3 using the service
+      const result = await this.s3UploadService!.uploadBatch(
+        integrationId,
+        s3Files,
+        machineId,
+        osType,
+        (uploaded, total) => {
+          // Update progress during S3 upload phase (30-60%)
+          this.syncStatus.progress = 30 + Math.floor((uploaded / total) * 30)
+          this.sendStatusUpdate()
+        }
+      )
+
+      console.log(`[S3Upload] Upload complete. Uploaded: ${result.uploaded.length}, Failed: ${result.failed.length}, Skipped: ${result.skipped.length}`)
+
+      // Update local DB for uploaded files (mark as syncing, will be updated when processing completes)
+      const uploadedSet = new Set(result.uploaded)
+      const skippedSet = new Set(result.skipped)
+
+      for (const fileData of filesToUpload) {
+        if (uploadedSet.has(fileData.fileHash)) {
+          // File uploaded to S3, processing async - mark as pending until processing completes
+          this.db.upsertFile({
+            filePath: fileData.filePath,
+            fileHash: fileData.fileHash,
+            fileSize: fileData.fileSize,
+            lastModified: fileData.lastModified,
+            documentId: null,
+            folderConfigId: fileData.folderConfigId,
+            lastSyncedAt: null,
+            status: 'pending',
+            errorMessage: null,
+          })
+          this.syncStatus.bytesProcessed += fileData.fileSize
+          if (fileData.uploadType === 'new') {
+            this.syncStatus.filesNew++
+          } else if (fileData.uploadType === 'updated') {
+            this.syncStatus.filesUpdated++
+          }
+        } else if (skippedSet.has(fileData.fileHash)) {
+          // Already exists on server
+          this.syncStatus.filesSkipped++
+        }
+      }
+
+      // Handle failed uploads
+      for (const failed of result.failed) {
+        const fileData = filesToUpload.find(f => f.fileHash === failed.fileHash)
+        if (fileData) {
+          this.db.upsertFile({
+            filePath: fileData.filePath,
+            fileHash: fileData.fileHash,
+            fileSize: fileData.fileSize,
+            lastModified: fileData.lastModified,
+            documentId: null,
+            folderConfigId: fileData.folderConfigId,
+            lastSyncedAt: null,
+            status: 'failed',
+            errorMessage: failed.error,
+          })
+          this.syncStatus.filesFailed++
+          failedFilesDetails.push({
+            fileName: path.basename(fileData.filePath),
+            filePath: fileData.filePath,
+            error: failed.error,
+          })
+        }
+      }
+
+      // Poll for processing completion (60-80%)
+      console.log(`[S3Upload] Waiting for backend processing...`)
+      await this.s3UploadService!.pollSyncStatus(
+        integrationId,
+        result.syncRunId,
+        (status) => {
+          // Update progress during processing phase (60-80%)
+          const processingProgress = status.progressPercent || 0
+          this.syncStatus.progress = 60 + Math.floor(processingProgress * 0.2)
+          this.sendStatusUpdate()
+
+          console.log(`[S3Upload] Processing: ${status.filesCompleted}/${status.filesProcessing + status.filesCompleted} complete`)
+        },
+        3000 // Poll every 3 seconds
+      )
+
+      console.log(`[S3Upload] Processing complete`)
+
+    } catch (error) {
+      console.error('[S3Upload] Error:', error)
+      const errorMsg = String(error)
+
+      // Mark all files as failed
+      for (const fileData of filesToUpload) {
+        this.db.upsertFile({
+          filePath: fileData.filePath,
+          fileHash: fileData.fileHash,
+          fileSize: fileData.fileSize,
+          lastModified: fileData.lastModified,
+          documentId: null,
+          folderConfigId: fileData.folderConfigId,
+          lastSyncedAt: null,
+          status: 'failed',
+          errorMessage: errorMsg,
+        })
+        this.syncStatus.filesFailed++
+        failedFilesDetails.push({
+          fileName: path.basename(fileData.filePath),
+          filePath: fileData.filePath,
+          error: errorMsg,
+        })
+      }
+    }
+  }
+
+  /**
+   * Check for and optionally resume an incomplete sync
+   */
+  async checkAndResumeIncompleteSync(): Promise<boolean> {
+    if (!this.initializeApiClient()) {
+      return false
+    }
+
+    const integrationId = this.db.getConfig('integrationId')
+    if (!integrationId) {
+      return false
+    }
+
+    try {
+      const incompleteSync = await this.s3UploadService!.checkForIncompleteSyncs(integrationId)
+
+      if (incompleteSync) {
+        console.log(`[SyncEngine] Found incomplete sync: ${incompleteSync.id}`)
+
+        const shouldResume = await this.s3UploadService!.promptResumeSync(
+          incompleteSync.filesCompleted,
+          incompleteSync.filesPending
+        )
+
+        if (shouldResume) {
+          console.log(`[SyncEngine] Resuming sync ${incompleteSync.id}...`)
+          // TODO: Implement actual resume logic
+          return true
+        }
+      }
+
+      return false
+    } catch (error) {
+      console.error('[SyncEngine] Error checking for incomplete syncs:', error)
+      return false
     }
   }
 
