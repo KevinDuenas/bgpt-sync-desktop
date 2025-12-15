@@ -13,8 +13,8 @@ import { BrowserWindow } from 'electron'
 import { needsConversion, convertFile } from './file-converter'
 
 // Threshold for using S3 upload (files count or total size)
-const S3_UPLOAD_FILE_THRESHOLD = 50  // Use S3 for more than 50 files
-const S3_UPLOAD_SIZE_THRESHOLD = 50 * 1024 * 1024  // Use S3 for more than 50MB total
+const S3_UPLOAD_FILE_THRESHOLD = 10  // Use S3 for more than 10 files
+const S3_UPLOAD_SIZE_THRESHOLD = 10 * 1024 * 1024  // Use S3 for more than 10MB total
 
 export class SyncEngine {
   private db: DatabaseManager
@@ -385,12 +385,14 @@ export class SyncEngine {
           osType
         )
 
-        // Update database with results
-        for (let j = 0; j < results.length; j++) {
-          const result = results[j]
-          const fileData = batch[j]
+        // Create a map for fast lookup by fileHash
+        const resultsMap = new Map(results.map(r => [r.fileHash, r]))
 
-          if (result.status === 'success') {
+        // Update database with results - match by fileHash for robustness
+        for (const fileData of batch) {
+          const result = resultsMap.get(fileData.fileHash)
+
+          if (result && (result.status === 'success' || result.status === 'skipped')) {
             this.db.upsertFile({
               filePath: fileData.filePath,
               fileHash: fileData.fileHash,
@@ -410,7 +412,7 @@ export class SyncEngine {
               this.syncStatus.filesUpdated++
             }
           } else {
-            const errorMsg = result.errorMessage || 'Upload failed'
+            const errorMsg = result?.errorMessage || 'Upload failed - no result from server'
             this.db.upsertFile({
               filePath: fileData.filePath,
               fileHash: fileData.fileHash,
