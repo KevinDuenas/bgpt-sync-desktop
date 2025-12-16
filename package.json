@@ -1,6 +1,6 @@
 {
   "name": "lina-sync",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Lina Desktop Sync App",
   "main": "dist/main/main/index.js",
   "scripts": {

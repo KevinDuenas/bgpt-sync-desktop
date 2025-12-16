@@ -9,6 +9,7 @@
  */
 import fs from 'fs'
 import { dialog } from 'electron'
+import axios from 'axios'
 import { ApiClient, S3BatchUploadResponse, S3SyncStatus, ResumeSyncResponse } from './api-client'
 
 // Concurrency limit for S3 uploads
@@ -164,15 +165,17 @@ export class S3UploadService {
   private async uploadToS3(presignedUrl: string, filePath: string): Promise<void> {
     const fileBuffer = fs.readFileSync(filePath)
 
-    const response = await fetch(presignedUrl, {
-      method: 'PUT',
-      body: fileBuffer,
+    // Use axios for reliable uploads in Electron environment
+    const response = await axios.put(presignedUrl, fileBuffer, {
       headers: {
         'Content-Type': 'application/octet-stream',
+        'Content-Length': fileBuffer.length,
       },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
     })
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(`S3 upload failed: ${response.status} ${response.statusText}`)
     }
   }
