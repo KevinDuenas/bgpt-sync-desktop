@@ -26,6 +26,10 @@ export interface S3UploadFile {
   lastModified: number
   folderConfigId: number
   groupIds: string[]
+  /** Optional converted content buffer (e.g., XML converted to JSON) */
+  convertedContent?: Buffer
+  /** Original filename before conversion */
+  originalFileName?: string
 }
 
 export interface S3UploadResult {
@@ -50,7 +54,8 @@ export class S3UploadService {
     files: S3UploadFile[],
     machineId: string,
     os: string,
-    onProgress: (uploaded: number, total: number) => void
+    onProgress: (uploaded: number, total: number) => void,
+    existingSyncRunId?: string
   ): Promise<S3UploadResult> {
     // 1. Request presigned URLs from backend
     console.log(`[S3Upload] Requesting presigned URLs for ${files.length} files`)
@@ -65,7 +70,8 @@ export class S3UploadService {
         localPath: f.filePath,
       })),
       machineId,
-      os
+      os,
+      existingSyncRunId
     )
 
     // Check if confirmation is required for large uploads

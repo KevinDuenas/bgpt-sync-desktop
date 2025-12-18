@@ -295,7 +295,8 @@ export class ApiClient {
       localPath?: string
     }>,
     machineId: string,
-    os: string
+    os: string,
+    syncRunId?: string
   ): Promise<S3BatchUploadResponse> {
     const response = await this.client.post(
       `/integrations/local/${integrationId}/request-batch-upload`,
@@ -310,6 +311,7 @@ export class ApiClient {
         })),
         machine_id: machineId,
         os: os,
+        sync_run_id: syncRunId,
       }
     )
 

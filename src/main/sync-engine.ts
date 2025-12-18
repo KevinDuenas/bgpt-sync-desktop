@@ -233,7 +233,8 @@ export class SyncEngine {
             filesToUpload,
             machineId,
             osType,
-            failedFilesDetails
+            failedFilesDetails,
+            syncRun.id
           )
         } else {
           // Direct Upload Flow - for small batches (legacy)
@@ -469,7 +470,8 @@ export class SyncEngine {
     filesToUpload: any[],
     machineId: string,
     osType: string,
-    failedFilesDetails: Array<{ fileName: string; filePath: string; error: string }>
+    failedFilesDetails: Array<{ fileName: string; filePath: string; error: string }>,
+    syncRunId: string
   ): Promise<void> {
     // Prepare files for S3 upload
     const s3Files = filesToUpload.map(f => ({
@@ -483,7 +485,7 @@ export class SyncEngine {
     }))
 
     try {
-      // Upload to S3 using the service
+      // Upload to S3 using the service (pass existing syncRunId to avoid creating duplicate)
       const result = await this.s3UploadService!.uploadBatch(
         integrationId,
         s3Files,
@@ -493,7 +495,8 @@ export class SyncEngine {
           // Update progress during S3 upload phase (30-60%)
           this.syncStatus.progress = 30 + Math.floor((uploaded / total) * 30)
           this.sendStatusUpdate()
-        }
+        },
+        syncRunId
       )
 
       console.log(`[S3Upload] Upload complete. Uploaded: ${result.uploaded.length}, Failed: ${result.failed.length}, Skipped: ${result.skipped.length}`)
