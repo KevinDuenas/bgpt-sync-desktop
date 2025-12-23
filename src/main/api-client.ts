@@ -5,7 +5,7 @@ import axios, { AxiosInstance } from 'axios'
 import FormData from 'form-data'
 import fs from 'fs'
 import { Readable } from 'stream'
-import { SyncRun, Group } from '../shared/types'
+import { SyncRun, Group, SyncFilesResponse, SyncFileDetail } from '../shared/types'
 
 // Fixed backend URL - not configurable
 const API_BASE_URL = 'https://api.mypetid.app'
@@ -268,12 +268,49 @@ export class ApiClient {
       filesDeleted: run.files_deleted as number || 0,
       filesFailed: run.files_failed as number || 0,
       filesSkipped: run.files_skipped as number || 0,
+      filesCompleted: run.files_completed as number || 0,
       bytesProcessed: run.bytes_processed as number || 0,
       errorMessage: run.error_message as string | null,
     }))
     return {
       syncRuns,
       total: response.data.total,
+    }
+  }
+
+  /**
+   * Get sync files for a specific sync run
+   */
+  async getSyncFiles(
+    integrationId: string,
+    syncRunId: string,
+    options: { status?: string; limit?: number; offset?: number } = {}
+  ): Promise<SyncFilesResponse> {
+    const response = await this.client.get(
+      `/integrations/local/${integrationId}/sync-runs/${syncRunId}/files`,
+      { params: options }
+    )
+
+    // Map snake_case from API to camelCase for frontend
+    const files: SyncFileDetail[] = (response.data.files || []).map((f: Record<string, unknown>) => ({
+      id: f.id as string,
+      fileName: f.file_name as string,
+      fileHash: f.file_hash as string,
+      fileSize: f.file_size as number,
+      status: f.status as string,
+      errorCode: f.error_code as string | null,
+      lastError: f.last_error as string | null,
+      retryCount: f.retry_count as number || 0,
+      createdAt: f.created_at as string,
+      updatedAt: f.updated_at as string | null,
+      processedAt: f.processed_at as string | null,
+    }))
+
+    return {
+      files,
+      total: response.data.total,
+      byStatus: response.data.by_status || {},
+      byErrorCode: response.data.by_error_code || {},
     }
   }
 

@@ -3,7 +3,7 @@
  * Exposes safe API to renderer process
  */
 import { contextBridge, ipcRenderer } from 'electron'
-import { AppConfig, FolderConfig, ScheduleConfig, Group, SyncStatus, SyncRun } from '../shared/types'
+import { AppConfig, FolderConfig, ScheduleConfig, Group, SyncStatus, SyncRun, SyncFilesResponse } from '../shared/types'
 
 interface UpdateStatus {
   status: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('get-stats'),
   getSyncHistory: (limit?: number): Promise<{ syncRuns: SyncRun[]; total: number }> =>
     ipcRenderer.invoke('get-sync-history', limit),
+  getSyncFiles: (syncRunId: string, options?: { status?: string; limit?: number }): Promise<SyncFilesResponse> =>
+    ipcRenderer.invoke('get-sync-files', syncRunId, options),
 
   // Auto-updater
   checkForUpdates: (): Promise<{ success: boolean; version?: string; error?: string }> =>

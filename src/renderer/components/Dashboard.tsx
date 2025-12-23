@@ -7,19 +7,14 @@ import { SyncStatus } from '@shared/types'
 
 export default function Dashboard() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
-  const [stats, setStats] = useState({ totalFiles: 0, failedFiles: 0, lastSyncAt: null as number | null })
   const [isStarting, setIsStarting] = useState(false)
 
   useEffect(() => {
     loadStatus()
-    loadStats()
 
     // Listen for sync status updates
     window.electronAPI.onSyncStatusUpdate((status) => {
       setSyncStatus(status)
-      if (!status.isRunning) {
-        loadStats()
-      }
     })
 
     return () => {
@@ -30,11 +25,6 @@ export default function Dashboard() {
   const loadStatus = async () => {
     const status = await window.electronAPI.getSyncStatus()
     setSyncStatus(status)
-  }
-
-  const loadStats = async () => {
-    const newStats = await window.electronAPI.getStats()
-    setStats(newStats)
   }
 
   const handleStartSync = async () => {
@@ -65,7 +55,9 @@ export default function Dashboard() {
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Estado de Sincronización</h2>
+          <h2 style={{ fontSize: '20px', fontWeight: '600' }}>
+            {syncStatus?.isRunning ? 'Sincronización en Progreso' : 'Estado de la Última Sincronización'}
+          </h2>
           <button
             onClick={handleStartSync}
             disabled={syncStatus?.isRunning || isStarting}
@@ -119,32 +111,6 @@ export default function Dashboard() {
           <StatCard icon={<CheckCircle size={24} />} label="Bytes Procesados" value={formatBytes(syncStatus?.bytesProcessed || 0)} color="#3b82f6" />
         </div>
       </div>
-
-      {/* Overall Stats */}
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: '12px',
-        padding: '30px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-      }}>
-        <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '20px' }}>Estadísticas Generales</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-          <div>
-            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>Total Archivos Sincronizados</p>
-            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#111827' }}>{stats.totalFiles}</p>
-          </div>
-          <div>
-            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>Archivos Fallidos</p>
-            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#ef4444' }}>{stats.failedFiles}</p>
-          </div>
-          <div>
-            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>Última Sincronización</p>
-            <p style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
-              {stats.lastSyncAt ? formatTimestamp(stats.lastSyncAt) : 'Nunca'}
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
@@ -183,17 +149,3 @@ function formatBytes(bytes: number): string {
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
 }
 
-function formatTimestamp(timestamp: number): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-
-  if (minutes < 1) return 'Ahora mismo'
-  if (minutes < 60) return `hace ${minutes}m`
-  if (hours < 24) return `hace ${hours}h`
-  if (days < 7) return `hace ${days}d`
-  return date.toLocaleDateString('es-ES')
-}

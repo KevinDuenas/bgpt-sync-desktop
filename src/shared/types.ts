@@ -43,6 +43,7 @@ export interface SyncStatus {
   filesDeleted: number
   filesFailed: number
   filesSkipped: number
+  filesCompleted: number  // Successfully processed by Lambda
   bytesProcessed: number
   progress: number // 0-100
 }
@@ -60,6 +61,7 @@ export interface SyncRun {
   filesDeleted: number
   filesFailed: number
   filesSkipped: number
+  filesCompleted: number  // Successfully processed by Lambda
   bytesProcessed: number
   errorMessage: string | null
 }
@@ -76,4 +78,25 @@ export interface ScheduleConfig {
   time?: string // HH:MM for daily
   dayOfWeek?: number // 0-6 for weekly
   cronExpression?: string // custom cron
+}
+
+export interface SyncFileDetail {
+  id: string
+  fileName: string
+  fileHash: string
+  fileSize: number
+  status: string
+  errorCode: string | null
+  lastError: string | null
+  retryCount: number
+  createdAt: string
+  updatedAt: string | null
+  processedAt: string | null
+}
+
+export interface SyncFilesResponse {
+  files: SyncFileDetail[]
+  total: number
+  byStatus: Record<string, number>
+  byErrorCode: Record<string, number>
 }

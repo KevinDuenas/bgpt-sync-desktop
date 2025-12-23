@@ -33,6 +33,7 @@ export class SyncEngine {
     filesDeleted: 0,
     filesFailed: 0,
     filesSkipped: 0,
+    filesCompleted: 0,
     bytesProcessed: 0,
     progress: 0,
   }
@@ -115,6 +116,7 @@ export class SyncEngine {
       filesDeleted: 0,
       filesFailed: 0,
       filesSkipped: 0,
+      filesCompleted: 0,
       bytesProcessed: 0,
       progress: 0,
     }
@@ -218,6 +220,7 @@ export class SyncEngine {
       this.sendStatusUpdate()
 
       // Phase 3: Upload new/modified files
+      let usedS3Upload = false
       if (filesToUpload.length > 0) {
         const machineId = this.db.getConfig('machineId') || os.hostname()
         const osType = os.platform()
@@ -227,6 +230,8 @@ export class SyncEngine {
 
         if (useS3) {
           // S3 Upload Flow - for large batches
+          // Note: Lambda handles sync completion (status, files_completed, files_failed)
+          usedS3Upload = true
           console.log(`Phase 3: Uploading ${filesToUpload.length} files via S3...`)
           await this.performS3Upload(
             integrationId,
@@ -280,18 +285,21 @@ export class SyncEngine {
       this.syncStatus.progress = 95
       this.sendStatusUpdate()
 
-      // Complete sync run
-      const finalStatus = this.syncStatus.filesFailed > 0 ? 'partial' : 'completed'
-      await this.apiClient!.completeSyncRun(integrationId, syncRun.id, finalStatus, {
-        filesScanned: this.syncStatus.filesScanned,
-        filesNew: this.syncStatus.filesNew,
-        filesUpdated: this.syncStatus.filesUpdated,
-        filesDeleted: this.syncStatus.filesDeleted,
-        filesFailed: this.syncStatus.filesFailed,
-        filesSkipped: this.syncStatus.filesSkipped,
-        bytesProcessed: this.syncStatus.bytesProcessed,
-        errorDetails: failedFilesDetails.length > 0 ? failedFilesDetails : undefined,
-      })
+      // Complete sync run - only for direct upload flow
+      // For S3 upload, the Lambda handles completion (sets status, files_completed, files_failed)
+      if (!usedS3Upload) {
+        const finalStatus = this.syncStatus.filesFailed > 0 ? 'partial' : 'completed'
+        await this.apiClient!.completeSyncRun(integrationId, syncRun.id, finalStatus, {
+          filesScanned: this.syncStatus.filesScanned,
+          filesNew: this.syncStatus.filesNew,
+          filesUpdated: this.syncStatus.filesUpdated,
+          filesDeleted: this.syncStatus.filesDeleted,
+          filesFailed: this.syncStatus.filesFailed,
+          filesSkipped: this.syncStatus.filesSkipped,
+          bytesProcessed: this.syncStatus.bytesProcessed,
+          errorDetails: failedFilesDetails.length > 0 ? failedFilesDetails : undefined,
+        })
+      }
 
       this.syncStatus.lastSyncAt = Date.now()
       this.syncStatus.progress = 100
@@ -557,7 +565,7 @@ export class SyncEngine {
 
       // Poll for processing completion (60-80%)
       console.log(`[S3Upload] Waiting for backend processing...`)
-      await this.s3UploadService!.pollSyncStatus(
+      const finalStatus = await this.s3UploadService!.pollSyncStatus(
         integrationId,
         result.syncRunId,
         (status) => {
@@ -571,7 +579,14 @@ export class SyncEngine {
         3000 // Poll every 3 seconds
       )
 
-      console.log(`[S3Upload] Processing complete`)
+      // Update local sync status with Lambda's processing results
+      // This ensures the UI shows accurate counts (e.g., files that failed during processing)
+      this.syncStatus.filesCompleted = finalStatus.filesCompleted
+      this.syncStatus.filesFailed = finalStatus.filesFailed
+      this.syncStatus.filesSkipped = finalStatus.filesSkipped
+
+      console.log(`[S3Upload] Processing complete. Completed: ${finalStatus.filesCompleted}, Failed: ${finalStatus.filesFailed}, Skipped: ${finalStatus.filesSkipped}`)
+      this.sendStatusUpdate()
 
     } catch (error) {
       console.error('[S3Upload] Error:', error)

@@ -40,6 +40,27 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'))
   }
 
+  // Intercept close event to warn if sync is in progress
+  mainWindow.on('close', (event) => {
+    if (syncEngine.isSyncRunning()) {
+      const choice = dialog.showMessageBoxSync(mainWindow!, {
+        type: 'warning',
+        buttons: ['Cancelar', 'Cerrar de todos modos'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Sincronización en progreso',
+        message: 'Hay una sincronización en progreso.',
+        detail: 'Si cierras la aplicación ahora, los archivos que aún no se han subido no se sincronizarán. Los archivos ya subidos continuarán procesándose en el servidor.\n\n¿Deseas cerrar de todos modos?'
+      })
+
+      if (choice === 0) {
+        // User clicked "Cancelar" - prevent close
+        event.preventDefault()
+      }
+      // If choice === 1, allow the window to close
+    }
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -278,6 +299,22 @@ ipcMain.handle('get-sync-history', async (_, limit: number = 20) => {
   } catch (error) {
     console.error('Failed to fetch sync history:', error)
     return { syncRuns: [], total: 0 }
+  }
+})
+
+// Sync Files (per-file details for a sync run)
+ipcMain.handle('get-sync-files', async (_, syncRunId: string, options?: { status?: string; limit?: number }) => {
+  const apiToken = db.getConfig('apiToken')
+  const integrationId = db.getConfig('integrationId')
+
+  if (!apiToken || !integrationId) return { files: [], total: 0, byStatus: {}, byErrorCode: {} }
+
+  const apiClient = new ApiClient(apiToken)
+  try {
+    return await apiClient.getSyncFiles(integrationId, syncRunId, options)
+  } catch (error) {
+    console.error('Failed to fetch sync files:', error)
+    return { files: [], total: 0, byStatus: {}, byErrorCode: {} }
   }
 })
 

@@ -1,7 +1,7 @@
 /**
  * Global type definitions for Electron API
  */
-import { AppConfig, FolderConfig, ScheduleConfig, Group, SyncStatus, SyncRun } from '../shared/types'
+import { AppConfig, FolderConfig, ScheduleConfig, Group, SyncStatus, SyncRun, SyncFilesResponse } from '../shared/types'
 
 export interface UpdateStatus {
   status: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
@@ -41,6 +41,7 @@ declare global {
       // Stats
       getStats: () => Promise<{ totalFiles: number; failedFiles: number; lastSyncAt: number | null }>
       getSyncHistory: (limit?: number) => Promise<{ syncRuns: SyncRun[]; total: number }>
+      getSyncFiles: (syncRunId: string, options?: { status?: string; limit?: number }) => Promise<SyncFilesResponse>
 
       // Auto-updater
       checkForUpdates: () => Promise<{ success: boolean; version?: string; error?: string }>
