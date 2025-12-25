@@ -8,7 +8,7 @@ import { Readable } from 'stream'
 import { SyncRun, Group, SyncFilesResponse, SyncFileDetail } from '../shared/types'
 
 // Fixed backend URL - not configurable
-const API_BASE_URL = 'https://api.mypetid.app'
+const API_BASE_URL = 'https://api.oyelina.com'
 
 export class ApiClient {
   private client: AxiosInstance
