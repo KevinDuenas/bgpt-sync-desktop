@@ -62,7 +62,9 @@
       "dist/**/*",
       "package.json"
     ],
+    "icon": "build/icon.png",
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -87,6 +89,7 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
+      "icon": "build/icon.png",
       "target": [
         "nsis",
         "portable"
