@@ -2,9 +2,6 @@
  * API Client for Backend Communication
  */
 import axios, { AxiosInstance } from 'axios'
-import FormData from 'form-data'
-import fs from 'fs'
-import { Readable } from 'stream'
 import { SyncRun, Group, SyncFilesResponse, SyncFileDetail } from '../shared/types'
 
 // Fixed backend URL - not configurable
@@ -60,84 +57,6 @@ export class ApiClient {
       })
     }
     return results
-  }
-
-  /**
-   * Upload files in batch
-   * Supports both regular files and converted files (e.g., XML converted to JSON)
-   */
-  async uploadBatch(
-    integrationId: string,
-    files: Array<{
-      filePath: string
-      fileHash: string
-      fileName: string
-      fileSize: number
-      folderConfigId: number
-      groupIds: string[]
-      localPath: string
-      // For converted files (e.g., XML -> JSON)
-      convertedContent?: Buffer
-      originalFileName?: string
-      convertedFrom?: string
-    }>,
-    machineId: string,
-    os: string
-  ): Promise<Array<{ fileHash: string; documentId?: string; status: string; errorMessage?: string }>> {
-    const formData = new FormData()
-
-    // Add metadata
-    const metadata = {
-      files: files.map(f => ({
-        file_hash: f.fileHash,
-        file_name: f.fileName,
-        file_size: f.convertedContent ? f.convertedContent.length : f.fileSize,
-        local_path: f.localPath,
-        folder_config_id: f.folderConfigId,
-        group_ids: f.groupIds,
-        extra_metadata: {
-          // Include original file info if this was converted
-          ...(f.originalFileName && { original_filename: f.originalFileName }),
-          ...(f.convertedFrom && { converted_from: f.convertedFrom }),
-        },
-      })),
-      machine_id: machineId,
-      os: os,
-    }
-    formData.append('metadata', JSON.stringify(metadata))
-
-    // Add file data - use converted content if available, otherwise read from disk
-    for (const file of files) {
-      if (file.convertedContent) {
-        // Use Buffer stream for converted files
-        const stream = Readable.from(file.convertedContent)
-        formData.append('files', stream, {
-          filename: file.fileName,
-          contentType: 'application/json',
-        })
-      } else {
-        formData.append('files', fs.createReadStream(file.filePath), {
-          filename: file.fileName,
-        })
-      }
-    }
-
-    const response = await this.client.post(
-      `/integrations/local/${integrationId}/upload-batch`,
-      formData,
-      {
-        headers: formData.getHeaders(),
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      }
-    )
-
-    return response.data.results.map((r: any) => ({
-      fileHash: r.file_hash,
-      documentId: r.document_id,
-      status: r.status,
-      errorMessage: r.error_message,
-    }))
   }
 
   /**
