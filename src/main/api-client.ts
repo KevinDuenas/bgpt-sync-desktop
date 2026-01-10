@@ -213,6 +213,15 @@ export class ApiClient {
       bytesProcessed: number
       errorMessage?: string
       errorDetails?: Array<{ fileName: string; filePath: string; error: string }>
+      logSummary?: {
+        hashCheck?: {
+          totalFiles: number
+          alreadyOnServer: number
+          newToUpload: number
+        }
+        uploadMethod?: string
+        durationMs?: number
+      }
     }
   ): Promise<SyncRun> {
     const response = await this.client.post(
@@ -233,6 +242,15 @@ export class ApiClient {
             file_path: e.filePath,
             error: e.error,
           })),
+        } : undefined,
+        log_summary: stats.logSummary ? {
+          hash_check: stats.logSummary.hashCheck ? {
+            total_files: stats.logSummary.hashCheck.totalFiles,
+            already_on_server: stats.logSummary.hashCheck.alreadyOnServer,
+            new_to_upload: stats.logSummary.hashCheck.newToUpload,
+          } : undefined,
+          upload_method: stats.logSummary.uploadMethod,
+          duration_ms: stats.logSummary.durationMs,
         } : undefined,
       }
     )

@@ -122,6 +122,10 @@ export class SyncEngine {
     }
     // Collect error details for failed files
     const failedFilesDetails: Array<{ fileName: string; filePath: string; error: string }> = []
+    // Track sync start time and hash check info for logging
+    const syncStartTime = Date.now()
+    let hashCheckInfo = { totalFiles: 0, alreadyOnServer: 0, newToUpload: 0 }
+    let uploadMethod = 'direct'
     this.sendStatusUpdate()
 
     try {
@@ -216,11 +220,19 @@ export class SyncEngine {
 
       console.log(`Sync check: ${filesToUpload.filter(f => f.uploadType === 'new').length} new, ${filesToUpload.filter(f => f.uploadType === 'updated').length} updated, ${this.syncStatus.filesSkipped} unchanged`)
 
+      // Update hash check info for logging
+      hashCheckInfo = {
+        totalFiles: allHashes.length,
+        alreadyOnServer: filesUnchanged.length,
+        newToUpload: filesToUpload.length,
+      }
+
       this.syncStatus.progress = 30
       this.sendStatusUpdate()
 
       // Phase 3: Upload new/modified files
       let usedS3Upload = false
+      uploadMethod = 'direct' // Will be updated if S3 is used
       if (filesToUpload.length > 0) {
         const machineId = this.db.getConfig('machineId') || os.hostname()
         const osType = os.platform()
@@ -232,6 +244,7 @@ export class SyncEngine {
           // S3 Upload Flow - for large batches
           // Note: Lambda handles sync completion (status, files_completed, files_failed)
           usedS3Upload = true
+          uploadMethod = 's3'
           console.log(`Phase 3: Uploading ${filesToUpload.length} files via S3...`)
           await this.performS3Upload(
             integrationId,
@@ -298,6 +311,11 @@ export class SyncEngine {
           filesSkipped: this.syncStatus.filesSkipped,
           bytesProcessed: this.syncStatus.bytesProcessed,
           errorDetails: failedFilesDetails.length > 0 ? failedFilesDetails : undefined,
+          logSummary: {
+            hashCheck: hashCheckInfo,
+            uploadMethod: uploadMethod,
+            durationMs: Date.now() - syncStartTime,
+          },
         })
       }
 
@@ -324,6 +342,11 @@ export class SyncEngine {
               bytesProcessed: this.syncStatus.bytesProcessed,
               errorMessage: String(error),
               errorDetails: failedFilesDetails.length > 0 ? failedFilesDetails : undefined,
+              logSummary: {
+                hashCheck: hashCheckInfo,
+                uploadMethod: uploadMethod,
+                durationMs: Date.now() - syncStartTime,
+              },
             })
           }
         } catch (completeError) {
