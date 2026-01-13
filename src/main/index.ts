@@ -11,6 +11,9 @@ import { SyncScheduler } from './scheduler'
 import { ApiClient } from './api-client'
 import { AppConfig, FolderConfig, ScheduleConfig, Group } from '../shared/types'
 
+// Set app name (shown in dock tooltip and menu bar)
+app.setName('Lina Sync')
+
 // Configure auto-updater
 autoUpdater.autoDownload = true
 autoUpdater.autoInstallOnAppQuit = true
@@ -21,9 +24,15 @@ let syncEngine: SyncEngine
 let scheduler: SyncScheduler
 
 function createWindow() {
+  // Get icon path based on platform
+  const iconPath = process.platform === 'darwin'
+    ? path.join(__dirname, '../../../build/icon.icns')
+    : path.join(__dirname, '../../../build/icon.png')
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -122,6 +131,12 @@ function setupAutoUpdater() {
 
 // App lifecycle
 app.whenReady().then(() => {
+  // Set dock icon on macOS (for development mode)
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIconPath = path.join(__dirname, '../../../build/icon.png')
+    app.dock.setIcon(dockIconPath)
+  }
+
   // Initialize database and services
   db = new DatabaseManager()
   syncEngine = new SyncEngine(db)
