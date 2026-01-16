@@ -156,15 +156,15 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    scheduler.stop()
-    db.close()
+    scheduler?.stop()
+    db?.close()
     app.quit()
   }
 })
 
 app.on('before-quit', () => {
-  scheduler.stop()
-  db.close()
+  scheduler?.stop()
+  db?.close()
 })
 
 // IPC Handlers
