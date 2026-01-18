@@ -1,6 +1,6 @@
 {
   "name": "lina-sync",
-  "version": "2.0.9",
+  "version": "2.1.0",
   "description": "Lina Desktop Sync App",
   "main": "dist/main/main/index.js",
   "scripts": {
@@ -30,6 +30,7 @@
     "@electron-forge/maker-squirrel": "^7.10.2",
     "@electron-forge/maker-zip": "^7.10.2",
     "@electron-forge/plugin-vite": "^7.10.2",
+    "@electron/notarize": "^3.1.1",
     "@types/node": "^20.10.5",
     "@types/node-cron": "^3.0.11",
     "@types/react": "^18.2.45",
@@ -86,8 +87,12 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "G9743QWQ9G"
+      }
     },
+    "afterSign": "scripts/notarize.js",
     "win": {
       "icon": "build/icon.png",
       "target": [
